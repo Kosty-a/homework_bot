@@ -3,8 +3,8 @@ import os
 import time
 
 import requests
-import telebot
 from dotenv import load_dotenv
+from telegram import Bot
 
 import exceptions
 from custom_formatter import CustomFormatter
@@ -119,7 +119,7 @@ def main():
     check_tokens()
 
     # Создаем объект класса бота
-    bot = telebot.TeleBot(token=TELEGRAM_TOKEN)
+    bot = Bot(token=TELEGRAM_TOKEN)
     timestamp = int(time.time())
 
     while True:
