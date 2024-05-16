@@ -35,11 +35,7 @@ HOMEWORK_VERDICTS = {
 
 def check_tokens():
     """Проверка наличия необходимых переменных оружения."""
-    if PRACTICUM_TOKEN and TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
-        logger.debug('Environment variables: OK')
-    else:
-        logger.critical('Environment variables: FAIL')
-        raise exceptions.EnvVarError('Environment variables: FAIL')
+    return all([PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID])
 
 
 def send_message(bot, message):
@@ -50,8 +46,8 @@ def send_message(bot, message):
             text=message
         )
         logger.debug('Send message: OK')
-    except Exception:
-        logger.error('Send message: FAIL')
+    except Exception as error:
+        logger.error(f'Send message: FAIL\n{error}')
 
 
 def get_api_answer(timestamp):
@@ -61,37 +57,31 @@ def get_api_answer(timestamp):
         api_answer = requests.get(ENDPOINT, headers=HEADERS, params=payload)
         if api_answer.status_code == 200:
             api_answer = api_answer.json()
-            logger.debug('API answer: OK')
         else:
-            logger.error('API answer status code: FAIL')
             raise exceptions.APIAnswerStatusCodeError()
     except exceptions.APIAnswerStatusCodeError:
         raise exceptions.APIAnswerStatusCodeError(
-            'API answer status code: FAIL'
+            'API answer status code: FAIL\n'
+            f'params: {payload}\n'
+            f'status_code: {api_answer.status_code}\n'
+            f'content: {api_answer.json()}'
         )
     except Exception:
-        logger.error('API answer: FAIL')
-        raise Exception('API answer: FAIL')
+        raise exceptions.APIAnswerError('API answer: FAIL')
 
     return api_answer
 
 
 def check_response(response):
     """Проверка ответа API."""
-    if type(response) is not dict:
-        logger.error('Check response is dict: FAIL')
+    if not isinstance(response, dict):
         raise TypeError('Check response is dict: FAIL')
-    try:
-        homeworks = response['homeworks']
-    except KeyError:
-        logger.error('Check response homework: FAIL')
+    if 'homeworks' not in response:
         raise exceptions.CheckResponseHomeworkError(
             'Check response homework: FAIL'
         )
-    if type(homeworks) is not list:
-        logger.error('Check response homework is list: FAIL')
+    if not isinstance(response['homeworks'], list):
         raise TypeError('Check response homework is list: FAIL')
-    logger.debug('Check response: OK')
 
 
 def parse_status(homework):
@@ -100,15 +90,12 @@ def parse_status(homework):
         status = homework.get('status')
         verdict = HOMEWORK_VERDICTS.get(status)
     else:
-        logger.error('Homework name: FAIL')
         raise exceptions.ParseStatusHomeworkNameError(
             'Homework name: FAIL'
         )
     if verdict:
-        logger.debug('Parse status: OK')
         return f'Изменился статус проверки работы "{homework_name}". {verdict}'
     else:
-        logger.error('Homework status: FAIL')
         raise exceptions.ParseStatusHomeworkStatusError(
             'Homework status: FAIL'
         )
@@ -116,7 +103,11 @@ def parse_status(homework):
 
 def main():
     """Основная логика работы бота."""
-    check_tokens()
+    if check_tokens():
+        logger.debug('Environment variables: OK')
+    else:
+        logger.critical('Environment variables: FAIL')
+        exit()
 
     # Создаем объект класса бота
     bot = Bot(token=TELEGRAM_TOKEN)
@@ -125,13 +116,19 @@ def main():
     while True:
         try:
             api_answer = get_api_answer(timestamp)
+            logger.debug('API answer: OK')
             check_response(api_answer)
+            logger.debug('Check response: OK')
             if homework := api_answer.get('homeworks'):
+                logger.debug('New homework status: YES')
                 message = parse_status(homework[0])
+                logger.debug('Parse status: OK')
                 send_message(bot, message)
             else:
                 logger.debug('New homework status: NO')
+            timestamp = api_answer.get('current_date')
         except Exception as error:
+            logger.error(error)
             message = f'Сбой в работе программы: {error}'
             send_message(bot, message)
         time.sleep(RETRY_PERIOD)
